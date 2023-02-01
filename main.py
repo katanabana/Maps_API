@@ -43,13 +43,13 @@ class MainWindow(QMainWindow):
             self.map_z += 1
         if k == Qt.Key_PageDown and self.map_z > 0:
             self.map_z -= 1
-        if k == Qt.Key_Left:
+        if k == Qt.Key_Left and self.map_ll[0] - self.delta >= -180:
             self.map_ll[0] -= self.delta
-        if k == Qt.Key_Right:
+        if k == Qt.Key_Right and self.map_ll[0] + self.delta <= 180:
             self.map_ll[0] += self.delta
-        if k == Qt.Key_Up:
+        if k == Qt.Key_Up and self.map_ll[1] + self.delta <= 80:
             self.map_ll[1] += self.delta
-        if k == Qt.Key_Down:
+        if k == Qt.Key_Down and self.map_ll[1] - self.delta >= -80:
             self.map_ll[1] -= self.delta
         self.refresh_map()
 
