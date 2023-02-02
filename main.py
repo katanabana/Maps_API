@@ -1,6 +1,6 @@
 import sys
 import requests
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QInputDialog, QPushButton
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from urllib3.util.retry import Retry
@@ -12,7 +12,7 @@ class MainWindow(QMainWindow):
         self.initUI()
         self.map_ll = [50, 50]
         self.map_l = 'map'
-        self.map_key = ''
+        self.API_KEY = '40d1649f-0493-4b70-98ba-98533de7710b'
         self.map_z = 3
         self.delta = 10
         self.refresh_map()
@@ -24,14 +24,52 @@ class MainWindow(QMainWindow):
         lt = QVBoxLayout(cw)
         self.map = QLabel()
         lt.addWidget(self.map)
+        self.find_btn = QPushButton(self)
+        self.find_btn.setText('Найти')
+        self.find_btn.move(8, 1)
+        self.find_btn.resize(50, 23)
+        self.find_txt = None
+        self.find_btn.clicked.connect(self.finding)
+
+    def geocode(self, adress):
+        geocoder_req = f"http://geocode-maps.yandex.ru/1.x/?apikey={self.API_KEY}" \
+                       f"&geocode={adress}&format=json"
+        response = requests.get(geocoder_req)
+        if response:
+            json_response = response.json()
+        else:
+            raise RuntimeError('Ошибка выполнения запроса')
+        features = json_response['response']["GeoObjectCollection"]["featureMember"]
+        return features[0]['GeoObject'] if features else None
+
+    def finding(self):
+        name, ok_pressed = QInputDialog.getText(self, "Введите название", 'Введите название места:')
+        if ok_pressed:
+            self.find_txt = name
+            new_ll = self.get_address_coords(name).split()
+            self.map_ll = [float(new_ll[0]), float(new_ll[1])]
+            self.ping = True
+            self.pt = ','.join(map(str, self.map_ll)) + f',pmwtm'
+            self.refresh_map()
+
+    def get_address_coords(self, address):
+        toponym = self.geocode(address)
+        toponym_coordinates = toponym['Point']["pos"]
+        return toponym_coordinates
 
     def refresh_map(self):
-        params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.map_key, 'z': self.map_z}
+        try:
+            if self.ping:
+                params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
+                          'z': self.map_z, 'pt': self.pt}
+        except Exception:
+            params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
+                      'z': self.map_z}
         session = requests.Session()
         retry = Retry(total=10, connect=5)
         adapter = requests.adapters.HTTPAdapter(max_retries=retry)
         session.mount('http://', adapter)
-        session.mount('http://', adapter)
+        session.mount('https://', adapter)
         resp = session.get('https://static-maps.yandex.ru/1.x/', params=params)
         with open('tmp.png', 'wb') as f:
             f.write(resp.content)
@@ -39,17 +77,19 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         k = event.key()
+        print(f'A D W S')
+        print(k)
         if k == Qt.Key_PageUp and self.map_z < 17:
             self.map_z += 1
         if k == Qt.Key_PageDown and self.map_z > 0:
             self.map_z -= 1
-        if k == Qt.Key_Left and self.map_ll[0] - self.delta >= -180:
+        if k == Qt.Key_A or k == 1060 and self.map_ll[0] - self.delta >= -180:
             self.map_ll[0] -= self.delta
-        if k == Qt.Key_Right and self.map_ll[0] + self.delta <= 180:
+        if k == Qt.Key_D or k == 1042 and self.map_ll[0] + self.delta <= 180:
             self.map_ll[0] += self.delta
-        if k == Qt.Key_Up and self.map_ll[1] + self.delta <= 80:
+        if k == Qt.Key_W or k == 1062 and self.map_ll[1] + self.delta <= 80:
             self.map_ll[1] += self.delta
-        if k == Qt.Key_Down and self.map_ll[1] - self.delta >= -80:
+        if k == Qt.Key_S or k == 1067 and self.map_ll[1] - self.delta >= -80:
             self.map_ll[1] -= self.delta
         self.refresh_map()
 
