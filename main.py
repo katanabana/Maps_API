@@ -1,9 +1,19 @@
 import sys
 import requests
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QInputDialog, QPushButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QInputDialog, QPushButton, \
+    QComboBox
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from urllib3.util.retry import Retry
+
+
+class MyComboBox(QComboBox):
+    def __init__(self, parent):
+        self.parent = parent
+        super(MyComboBox, self).__init__()
+
+    def keyPressEvent(self, event):
+        self.parent.keyPressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -21,15 +31,31 @@ class MainWindow(QMainWindow):
         cw = QWidget()
         self.setCentralWidget(cw)
         self.setGeometry(500, 500, 500, 500)
-        lt = QVBoxLayout(cw)
+        self.layout = QVBoxLayout(cw)
         self.map = QLabel()
-        lt.addWidget(self.map)
+        self.layout.addWidget(self.map)
         self.find_btn = QPushButton(self)
         self.find_btn.setText('Найти')
-        self.find_btn.move(8, 1)
-        self.find_btn.resize(50, 23)
+        self.layout.addWidget(self.find_btn)
         self.find_txt = None
         self.find_btn.clicked.connect(self.finding)
+
+        self.change_view_combo_box = MyComboBox(self)
+        self.change_view_combo_box.addItem('схема')
+        self.change_view_combo_box.addItem('спутник')
+        self.change_view_combo_box.addItem('гибрид')
+        self.layout.addWidget(self.change_view_combo_box)
+        self.change_view_combo_box.currentIndexChanged.connect(self.change_map_view)
+
+    def change_map_view(self):
+        view = self.change_view_combo_box.currentText()
+        if view == 'схема':
+            self.map_l = 'map'
+        elif view == 'спутник':
+            self.map_l = 'sat'
+        elif view == 'гибрид':
+            self.map_l = 'sat,skl'
+        self.refresh_map()
 
     def geocode(self, adress):
         geocoder_req = f"http://geocode-maps.yandex.ru/1.x/?apikey={self.API_KEY}" \
