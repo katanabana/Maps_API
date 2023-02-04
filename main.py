@@ -32,24 +32,47 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(cw)
         self.setGeometry(500, 500, 500, 500)
         self.layout = QVBoxLayout(cw)
-        self.map = QLabel()
-        self.layout.addWidget(self.map)
-        self.find_btn = QPushButton(self)
-        self.find_btn.setText('Найти')
-        self.layout.addWidget(self.find_btn)
-        self.find_txt = None
-        self.find_btn.clicked.connect(self.finding)
-        self.delete_btn = QPushButton(self)
-        self.layout.addWidget(self.delete_btn)
-        self.delete_btn.setText('Удалить метку')
-        self.delete_btn.clicked.connect(self.deleting)
 
+        #############################################################################################################
+        # переключатель слоёв карты (схема/спутник/гибрид), при изменении которого надо менять вид карты
         self.change_view_combo_box = MyComboBox(self)
         self.change_view_combo_box.addItem('схема')
         self.change_view_combo_box.addItem('спутник')
         self.change_view_combo_box.addItem('гибрид')
         self.layout.addWidget(self.change_view_combo_box)
         self.change_view_combo_box.currentIndexChanged.connect(self.change_map_view)
+        #############################################################################################################
+
+        #############################################################################################################
+        # виджет, в котором показывается изображение карты
+        self.map = QLabel()
+        self.layout.addWidget(self.map)
+        #############################################################################################################
+
+        #############################################################################################################
+        # конпка для того, чтобы найти географический объект
+        self.find_btn = QPushButton(self)
+        self.find_btn.setText('Найти')
+        self.layout.addWidget(self.find_btn)
+        self.find_txt = None
+        self.find_btn.clicked.connect(self.finding)
+        #############################################################################################################
+
+        #############################################################################################################
+        # виджет, где будет показываться полный адрес найденного географического объекта
+        self.label_for_address = QLabel()
+        self.layout.addWidget(self.label_for_address)
+        #############################################################################################################
+
+        #############################################################################################################
+        # конпка для того, чтобы сбросить найденный географический объект
+        self.delete_btn = QPushButton(self)
+        self.layout.addWidget(self.delete_btn)
+        self.delete_btn.setText('Удалить метку')
+        self.delete_btn.clicked.connect(self.deleting)
+        # при нажатии конпки - удалить полный адрес найденного гегографического объекта с экрана
+        self.delete_btn.clicked.connect(lambda: self.label_for_address.setText(''))
+        #############################################################################################################
 
     def deleting(self):
         try:
@@ -91,8 +114,17 @@ class MainWindow(QMainWindow):
 
     def get_address_coords(self, address):
         toponym = self.geocode(address)
+
+        # Показать полный адрес найденного географического объекта на экране
+        self.show_address(toponym)
+
         toponym_coordinates = toponym['Point']["pos"]
         return toponym_coordinates
+
+    # Показывает полный адрес найденного географического объекта в виджете
+    def show_address(self, toponym):
+        full_address = toponym['metaDataProperty']['GeocoderMetaData']['text']
+        self.label_for_address.setText(full_address)
 
     def refresh_map(self):
         try:
