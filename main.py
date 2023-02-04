@@ -39,6 +39,10 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.find_btn)
         self.find_txt = None
         self.find_btn.clicked.connect(self.finding)
+        self.delete_btn = QPushButton(self)
+        self.layout.addWidget(self.delete_btn)
+        self.delete_btn.setText('Удалить метку')
+        self.delete_btn.clicked.connect(self.deleting)
 
         self.change_view_combo_box = MyComboBox(self)
         self.change_view_combo_box.addItem('схема')
@@ -46,6 +50,13 @@ class MainWindow(QMainWindow):
         self.change_view_combo_box.addItem('гибрид')
         self.layout.addWidget(self.change_view_combo_box)
         self.change_view_combo_box.currentIndexChanged.connect(self.change_map_view)
+
+    def deleting(self):
+        try:
+            self.ping = False
+            self.refresh_map()
+        except Exception:
+            pass
 
     def change_map_view(self):
         view = self.change_view_combo_box.currentText()
@@ -88,6 +99,9 @@ class MainWindow(QMainWindow):
             if self.ping:
                 params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
                           'z': self.map_z, 'pt': self.pt}
+            else:
+                params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
+                          'z': self.map_z}
         except Exception:
             params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
                       'z': self.map_z}
@@ -103,8 +117,6 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         k = event.key()
-        print(f'A D W S')
-        print(k)
         if k == Qt.Key_PageUp and self.map_z < 17:
             self.map_z += 1
         if k == Qt.Key_PageDown and self.map_z > 0:
