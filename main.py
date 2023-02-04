@@ -1,7 +1,7 @@
 import sys
 import requests
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QInputDialog, QPushButton, \
-    QComboBox
+    QComboBox, QCheckBox
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from urllib3.util.retry import Retry
@@ -74,12 +74,28 @@ class MainWindow(QMainWindow):
         self.delete_btn.clicked.connect(lambda: self.label_for_address.setText(''))
         #############################################################################################################
 
+        self.show_postal_index = QCheckBox('Показывать почтовый индекс (объект не указан)')
+        self.show_postal_index.setDisabled(True)
+        self.layout.addWidget(self.show_postal_index)
+        self.show_postal_index.clicked.connect(self.show_postal_index_clicked)
+
     def deleting(self):
         try:
+            self.show_postal_index.setText('Показывать почтовый индекс (объект не указан)')
+            self.show_postal_index.setDisabled(True)
             self.ping = False
             self.refresh_map()
         except Exception:
             pass
+
+    def show_postal_index_clicked(self):
+        if self.sender().isChecked():
+            postal_ind = '; Почтовый индекс: '
+            postal_ind += self.toponym['metaDataProperty']['GeocoderMetaData']['Address']['postal_code']
+            self.address = self.label_for_address.text()
+            self.label_for_address.setText(self.address + postal_ind)
+        else:
+            self.label_for_address.setText(self.address)
 
     def change_map_view(self):
         view = self.change_view_combo_box.currentText()
@@ -113,12 +129,16 @@ class MainWindow(QMainWindow):
             self.refresh_map()
 
     def get_address_coords(self, address):
-        toponym = self.geocode(address)
+        self.toponym = self.geocode(address)
+        self.has_postal_ind = 'postal_code' in self.toponym['metaDataProperty']['GeocoderMetaData']['Address']
+        self.show_postal_index.setDisabled(not self.has_postal_ind)
+        self.show_postal_index.setText(
+            'Показывать почтовый индекс' + ' (У данного объекта нет почтового индекса)' * (not self.has_postal_ind))
 
         # Показать полный адрес найденного географического объекта на экране
-        self.show_address(toponym)
+        self.show_address(self.toponym)
 
-        toponym_coordinates = toponym['Point']["pos"]
+        toponym_coordinates = self.toponym['Point']["pos"]
         return toponym_coordinates
 
     # Показывает полный адрес найденного географического объекта в виджете
@@ -153,13 +173,13 @@ class MainWindow(QMainWindow):
             self.map_z += 1
         if k == Qt.Key_PageDown and self.map_z > 0:
             self.map_z -= 1
-        if k == Qt.Key_A or k == 1060 and self.map_ll[0] - self.delta >= -180:
+        if (k == Qt.Key_A or k == 1060) and self.map_ll[0] - self.delta >= -180:
             self.map_ll[0] -= self.delta
-        if k == Qt.Key_D or k == 1042 and self.map_ll[0] + self.delta <= 180:
+        if (k == Qt.Key_D or k == 1042) and self.map_ll[0] + self.delta <= 180:
             self.map_ll[0] += self.delta
-        if k == Qt.Key_W or k == 1062 and self.map_ll[1] + self.delta <= 80:
+        if (k == Qt.Key_W or k == 1062) and self.map_ll[1] + self.delta <= 80:
             self.map_ll[1] += self.delta
-        if k == Qt.Key_S or k == 1067 and self.map_ll[1] - self.delta >= -80:
+        if (k == Qt.Key_S or k == 1067) and self.map_ll[1] - self.delta >= -80:
             self.map_ll[1] -= self.delta
         self.refresh_map()
 
