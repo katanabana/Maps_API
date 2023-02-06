@@ -1,3 +1,4 @@
+import math
 import sys
 import requests
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QInputDialog, QPushButton, \
@@ -5,6 +6,15 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWid
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 from urllib3.util.retry import Retry
+
+
+def get_response(url, params):
+    session = requests.Session()
+    retry = Retry(total=10, connect=5)
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session.get(url, params=params)
 
 
 class MyComboBox(QComboBox):
@@ -16,21 +26,62 @@ class MyComboBox(QComboBox):
         self.parent.keyPressEvent(event)
 
 
+class Map(QLabel):
+    def __init__(self, app):
+        super(Map, self).__init__()
+        self.app = app
+
+    def mousePressEvent(self, event):
+        d = 2 ** self.app.map_z
+        image_width, image_height = self.app.map_size
+        lon_center, lat_center = self.app.map_ll
+
+        lon_per_pix = 360 / 250 / d
+        lon = lon_center + (event.x() - image_width / 2) * lon_per_pix
+        if lon < -180:
+            lon %= 180
+        elif lon > 180:
+            lon = -180 + lon % 180
+        k = self.get_k_of_click(event.y(), lat_center, image_height, d)
+        if k is not None:
+            lat = self.get_lat(k)
+            self.app.set_pending_by_coords(lon, lat, False)
+
+    def get_lat(self, k):  # Gudermannian function
+        return math.degrees(math.atan(math.sinh(k)))
+
+    def get_k(self, lat):  # inverse Gudermannian function
+        return math.asinh(math.tan(math.radians(lat)))
+
+    def get_k_of_click(self, y_cursor, lat_center, image_height, d):
+        k_max = self.get_k(85)
+        k_min = self.get_k(-85)
+        coeff = 250 / (k_max - k_min) * d
+        k_center = self.get_k(lat_center)
+        y_min = image_height / 2 - (k_max - k_center) * coeff
+        y_max = image_height / 2 + (k_center - k_min) * coeff
+        if y_min <= y_cursor <= y_max:
+            k = k_center + (image_height / 2 - y_cursor) / coeff
+            return k
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-        self.initUI()
-        self.map_ll = [50, 50]
+        self.map_ll = [0, 0]
         self.map_l = 'map'
         self.API_KEY = '40d1649f-0493-4b70-98ba-98533de7710b'
-        self.map_z = 3
-        self.delta = 10
+        self.map_z = 1
+        self.map_size = [650, 450]
+        self.map_pt = None
+        self.toponym = None
+        self.delta = 30
+        self.initUI()
         self.refresh_map()
 
     def initUI(self):
         cw = QWidget()
         self.setCentralWidget(cw)
-        self.setGeometry(500, 500, 500, 500)
         self.layout = QVBoxLayout(cw)
 
         #############################################################################################################
@@ -45,7 +96,7 @@ class MainWindow(QMainWindow):
 
         #############################################################################################################
         # виджет, в котором показывается изображение карты
-        self.map = QLabel()
+        self.map = Map(self)
         self.layout.addWidget(self.map)
         #############################################################################################################
 
@@ -74,28 +125,37 @@ class MainWindow(QMainWindow):
         self.delete_btn.clicked.connect(lambda: self.label_for_address.setText(''))
         #############################################################################################################
 
-        self.show_postal_index = QCheckBox('Показывать почтовый индекс (объект не указан)')
-        self.show_postal_index.setDisabled(True)
+        self.show_postal_index = QCheckBox()
         self.layout.addWidget(self.show_postal_index)
-        self.show_postal_index.clicked.connect(self.show_postal_index_clicked)
+        self.show_postal_index.clicked.connect(self.update_postal_index)
+        self.update_postal_index()
 
     def deleting(self):
-        try:
-            self.show_postal_index.setText('Показывать почтовый индекс (объект не указан)')
-            self.show_postal_index.setDisabled(True)
-            self.ping = False
-            self.refresh_map()
-        except Exception:
-            pass
+        self.map_pt = None
+        self.toponym = None
+        self.refresh_map()
+        self.update_postal_index()
 
-    def show_postal_index_clicked(self):
-        if self.sender().isChecked():
-            postal_ind = '; Почтовый индекс: '
-            postal_ind += self.toponym['metaDataProperty']['GeocoderMetaData']['Address']['postal_code']
-            self.address = self.label_for_address.text()
-            self.label_for_address.setText(self.address + postal_ind)
+    def update_postal_index(self):
+        index_cb_text = 'Показывать почтовый индекс'
+        address_label_text = self.get_address(self.toponym)
+        if self.toponym:
+            address_obj = self.toponym['metaDataProperty']['GeocoderMetaData']['Address']
+            postal_ind = address_obj['postal_code'] if 'postal_code' in address_obj else None
+            disabled = not postal_ind
+            address = self.get_address(self.toponym)
+            if postal_ind:
+                if self.show_postal_index.isChecked():
+                    postal_ind = '\nПочтовый индекс: ' + postal_ind
+                    address_label_text += postal_ind
+            else:
+                index_cb_text += ' (у данного объекта нет почтового индекса)'
         else:
-            self.label_for_address.setText(self.address)
+            index_cb_text += ' (объект не указан)'
+            disabled = True
+        self.show_postal_index.setText(index_cb_text)
+        self.label_for_address.setText(address_label_text)
+        self.show_postal_index.setDisabled(disabled)
 
     def change_map_view(self):
         view = self.change_view_combo_box.currentText()
@@ -107,10 +167,10 @@ class MainWindow(QMainWindow):
             self.map_l = 'sat,skl'
         self.refresh_map()
 
-    def geocode(self, adress):
-        geocoder_req = f"http://geocode-maps.yandex.ru/1.x/?apikey={self.API_KEY}" \
-                       f"&geocode={adress}&format=json"
-        response = requests.get(geocoder_req)
+    def geocode_by_address(self, address):
+        url = 'http://geocode-maps.yandex.ru/1.x'
+        params = {'apikey': self.API_KEY, 'geocode': address, 'format': 'json'}
+        response = get_response(url, params)
         if response:
             json_response = response.json()
         else:
@@ -122,57 +182,61 @@ class MainWindow(QMainWindow):
         name, ok_pressed = QInputDialog.getText(self, "Введите название", 'Введите название места:')
         if ok_pressed:
             self.find_txt = name
-            new_ll = self.get_address_coords(name).split()
-            self.map_ll = [float(new_ll[0]), float(new_ll[1])]
-            self.ping = True
-            self.pt = ','.join(map(str, self.map_ll)) + f',pmwtm'
+            self.set_pending_by_address(name)
+
+    def set_pending(self, toponym, lon, lat, change_ll):
+        if toponym:
+            self.toponym = toponym
+            if change_ll:
+                self.map_ll = [lon, lat]
+            self.map_pt = f'{lon},{lat},round'
             self.refresh_map()
+            self.show_address(toponym)
+            self.update_postal_index()
 
-    def get_address_coords(self, address):
-        self.toponym = self.geocode(address)
-        self.has_postal_ind = 'postal_code' in self.toponym['metaDataProperty']['GeocoderMetaData']['Address']
-        self.show_postal_index.setDisabled(not self.has_postal_ind)
-        self.show_postal_index.setText(
-            'Показывать почтовый индекс' + ' (У данного объекта нет почтового индекса)' * (not self.has_postal_ind))
+    def set_pending_by_address(self, address, change_ll=True):
+        toponym = self.geocode_by_address(address)
+        if toponym:
+            lon, lat = map(float, toponym['Point']["pos"].split())
+            self.set_pending(toponym, lon, lat, change_ll)
 
-        # Показать полный адрес найденного географического объекта на экране
-        self.show_address(self.toponym)
+    def set_pending_by_coords(self, lon, lat, change_ll=True):
+        self.set_pending(self.geocode_by_coords(f'{lon},{lat}'), lon, lat, change_ll)
 
-        toponym_coordinates = self.toponym['Point']["pos"]
-        return toponym_coordinates
+    def geocode_by_coords(self, coords):
+        params = {"apikey": "40d1649f-0493-4b70-98ba-98533de7710b", "geocode": coords, "format": "json"}
+        resp = get_response("http://geocode-maps.yandex.ru/1.x/", params).json()
+        if resp:
+            return resp["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
 
     # Показывает полный адрес найденного географического объекта в виджете
+
+    def get_address(self, toponym):
+        return toponym['metaDataProperty']['GeocoderMetaData']['text'] if toponym else ''
+
     def show_address(self, toponym):
-        full_address = toponym['metaDataProperty']['GeocoderMetaData']['text']
-        self.label_for_address.setText(full_address)
+        self.label_for_address.setText(self.get_address(toponym))
 
     def refresh_map(self):
-        try:
-            if self.ping:
-                params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
-                          'z': self.map_z, 'pt': self.pt}
-            else:
-                params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
-                          'z': self.map_z}
-        except Exception:
-            params = {'ll': ','.join(map(str, self.map_ll)), 'l': self.map_l, 'apikey': self.API_KEY,
-                      'z': self.map_z}
-        session = requests.Session()
-        retry = Retry(total=10, connect=5)
-        adapter = requests.adapters.HTTPAdapter(max_retries=retry)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-        resp = session.get('https://static-maps.yandex.ru/1.x/', params=params)
+        x, y = self.map_ll
+        w, h = self.map_size
+        params = {'ll': f'{x},{y}', 'l': self.map_l, 'apikey': self.API_KEY, 'z': self.map_z, 'size': f'{w},{h}'}
+        if self.map_pt:
+            params['pt'] = self.map_pt
+        resp = get_response('https://static-maps.yandex.ru/1.x/', params)
         with open('tmp.png', 'wb') as f:
             f.write(resp.content)
         self.map.setPixmap(QPixmap('tmp.png'))
 
     def keyPressEvent(self, event):
         k = event.key()
+        min_z = 0 if min(self.map_size) <= 250 else 1
         if k == Qt.Key_PageUp and self.map_z < 17:
             self.map_z += 1
-        if k == Qt.Key_PageDown and self.map_z > 0:
+            self.delta /= 2
+        if k == Qt.Key_PageDown and self.map_z > min_z:
             self.map_z -= 1
+            self.delta *= 2
         if (k == Qt.Key_A or k == 1060) and self.map_ll[0] - self.delta >= -180:
             self.map_ll[0] -= self.delta
         if (k == Qt.Key_D or k == 1042) and self.map_ll[0] + self.delta <= 180:
